@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .minecraft-auth/
+.minecraft-mcp/
 *.log
 .env
 .DS_Store

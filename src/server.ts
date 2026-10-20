@@ -5,6 +5,9 @@ import { config } from './config.js'
 import { eventTypes, MinecraftClient, type EntitySelector } from './minecraft-client.js'
 import { entity as serializeEntity, position } from './serializers.js'
 import { versionCapabilities } from './version-support.js'
+import { ActivityStore } from './activity-store.js'
+import { DashboardServer } from './dashboard-server.js'
+import { captureWorldMap } from './world-capture.js'
 
 const coordinates = z.object({
   x: z.number().describe('World X coordinate'),
@@ -21,8 +24,50 @@ const selectorShape = {
   maxDistance: z.number().positive().max(256).default(64).describe('Maximum selection distance from the bot')
 }
 
-export function createServer(client = new MinecraftClient()) {
-  const server = new McpServer({ name: 'minecraft-client-mcp', version: '1.0.0' })
+export function createServer(providedClient?: MinecraftClient) {
+  const server = new McpServer({ name: 'minecraft-client-mcp', version: '1.1.0' })
+  const client = providedClient ?? new MinecraftClient()
+  const activity = new ActivityStore(config.dashboardDataDirectory)
+  const dashboard = new DashboardServer(activity, {
+    host: config.dashboardHost,
+    port: config.dashboardPort,
+    capturesDirectory: activity.capturesDirectory,
+    getMinecraftStatus: () => client.status()
+  })
+
+  client.events.subscribe((event) => {
+    activity.recordEvent(event.type, event.data)
+    if (event.type === 'spawn') {
+      const status = client.status()
+      activity.updateCurrentSession({
+        status: 'connected',
+        connectedAt: event.at,
+        resolvedVersion: 'version' in status && typeof status.version === 'string' ? status.version : null
+      })
+    }
+    if (event.type === 'end' || event.type === 'kicked') {
+      activity.updateCurrentSession({ status: 'ended', endedAt: event.at, reason: JSON.stringify(event.data) })
+    }
+  })
+
+  const registerTool = ((name: string, toolConfig: unknown, callback: (input: any, extra: any) => Promise<any>) =>
+    (server.registerTool as any)(name, toolConfig, async (input: any, extra: any) => {
+      if (name === 'minecraft_connect') activity.startSession(input)
+      const tracked = activity.startAction(name, input)
+      try {
+        const result = await callback(input, extra)
+        const failed = Boolean(result?.isError)
+        activity.finishAction(tracked.id, failed ? 'failed' : 'succeeded', result, failed ? result?.content?.[0]?.text ?? 'Tool failed' : null)
+        if (name === 'minecraft_connect' && failed) activity.updateCurrentSession({ status: 'failed', endedAt: new Date().toISOString(), reason: result?.content?.[0]?.text ?? 'Connection failed' })
+        if (name === 'minecraft_disconnect' && !failed) activity.updateCurrentSession({ status: 'ended', endedAt: new Date().toISOString(), reason: 'Disconnected by MCP client' })
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        activity.finishAction(tracked.id, 'failed', null, message)
+        if (name === 'minecraft_connect') activity.updateCurrentSession({ status: 'failed', endedAt: new Date().toISOString(), reason: message })
+        throw error
+      }
+    })) as typeof server.registerTool
 
   server.registerResource(
     'minecraft-status',
@@ -48,7 +93,18 @@ export function createServer(client = new MinecraftClient()) {
     async () => resource('minecraft://versions', versionCapabilities())
   )
 
-  server.registerTool('minecraft_connect', {
+  server.registerResource(
+    'minecraft-dashboard',
+    'minecraft://dashboard',
+    { title: 'Minecraft session dashboard', description: 'Local dashboard URL and retained session counts', mimeType: 'application/json' },
+    async () => resource('minecraft://dashboard', {
+      url: dashboard.url,
+      enabled: config.dashboardEnabled,
+      ...counts(activity.snapshot())
+    })
+  )
+
+  registerTool('minecraft_connect', {
     title: 'Connect Minecraft client',
     description: 'Connect to a Minecraft Java server. Use offline auth for no-auth servers, or microsoft auth for online-mode servers. Microsoft device-code details are returned while connection continues in the background.',
     inputSchema: {
@@ -71,28 +127,28 @@ export function createServer(client = new MinecraftClient()) {
     profilesFolder: input.cacheMicrosoftAuth ? config.authCacheDirectory : false
   })))
 
-  server.registerTool('minecraft_disconnect', {
+  registerTool('minecraft_disconnect', {
     title: 'Disconnect Minecraft client',
     description: 'Cleanly disconnect the active Minecraft client.',
     inputSchema: { reason: z.string().max(256).default('Disconnected by MCP client') },
     annotations: { destructiveHint: true }
   }, async ({ reason }) => safe(() => client.disconnect(reason)))
 
-  server.registerTool('minecraft_status', {
+  registerTool('minecraft_status', {
     title: 'Get Minecraft client status',
     description: 'Return connection, player, health, game, position, and Microsoft device-auth state.',
     inputSchema: {},
     annotations: { readOnlyHint: true }
   }, async () => safe(() => client.status()))
 
-  server.registerTool('minecraft_versions', {
+  registerTool('minecraft_versions', {
     title: 'Get Minecraft version compatibility',
     description: 'Report the exact Minecraft versions tested by the installed Mineflayer stack and compatibility details for 26.1, 26.1.1, 26.1.2, and 26.2.',
     inputSchema: {},
     annotations: { readOnlyHint: true }
   }, async () => safe(() => versionCapabilities()))
 
-  server.registerTool('minecraft_events', {
+  registerTool('minecraft_events', {
     title: 'Read or wait for Minecraft events',
     description: 'Read chat, messages, login, combat, health, player, window, and connection events using a sequence cursor. Pass the last sequence back as afterSequence to receive only new events.',
     inputSchema: {
@@ -107,7 +163,7 @@ export function createServer(client = new MinecraftClient()) {
     latestSequence: client.events.latestSequence()
   })))
 
-  server.registerTool('minecraft_chat', {
+  registerTool('minecraft_chat', {
     title: 'Send Minecraft chat or command',
     description: 'Send a chat message, whisper, or slash command. Commands are sent through the normal Minecraft chat channel and require server-side permission.',
     inputSchema: {
@@ -125,7 +181,7 @@ export function createServer(client = new MinecraftClient()) {
     return { sent: true, action, message, ...(username ? { username } : {}) }
   })))
 
-  server.registerTool('minecraft_move', {
+  registerTool('minecraft_move', {
     title: 'Move the Minecraft client',
     description: 'Pathfind to coordinates, follow an entity, apply low-level controls for a bounded duration, or stop all movement.',
     inputSchema: {
@@ -153,7 +209,7 @@ export function createServer(client = new MinecraftClient()) {
     return client.stopMovement()
   })))
 
-  server.registerTool('minecraft_look', {
+  registerTool('minecraft_look', {
     title: 'Aim the Minecraft client',
     description: 'Look at an exact world point, an entity, or absolute yaw and pitch in radians.',
     inputSchema: {
@@ -178,7 +234,7 @@ export function createServer(client = new MinecraftClient()) {
     return { yaw: bot.entity.yaw, pitch: bot.entity.pitch }
   })))
 
-  server.registerTool('minecraft_world_snapshot', {
+  registerTool('minecraft_world_snapshot', {
     title: 'Get compact Minecraft world state',
     description: 'Return nearby blocks as palette-compressed coordinate tuples plus sorted entities and player state. Bounds keep responses efficient. Air is omitted by default.',
     inputSchema: {
@@ -193,7 +249,7 @@ export function createServer(client = new MinecraftClient()) {
   }, async ({ radius, verticalRadius, includeAir, blockLimit, entityRadius, entityLimit }) =>
     safe(() => client.worldSnapshot(radius, verticalRadius, includeAir, blockLimit, entityRadius, entityLimit)))
 
-  server.registerTool('minecraft_find_blocks', {
+  registerTool('minecraft_find_blocks', {
     title: 'Find nearby Minecraft blocks',
     description: 'Efficiently find the nearest loaded blocks matching one or more exact registry names such as oak_log or diamond_ore.',
     inputSchema: {
@@ -204,7 +260,7 @@ export function createServer(client = new MinecraftClient()) {
     annotations: { readOnlyHint: true }
   }, async ({ names, maxDistance, count }) => safe(() => ({ blocks: client.findBlocks(names, maxDistance, count) })))
 
-  server.registerTool('minecraft_entities', {
+  registerTool('minecraft_entities', {
     title: 'Query nearby Minecraft entities',
     description: 'List nearby entities, optionally filtered by exact ID, UUID, username, name, or category.',
     inputSchema: { ...selectorShape, limit: z.number().int().min(1).max(500).default(100) },
@@ -226,7 +282,7 @@ export function createServer(client = new MinecraftClient()) {
     return { entities: matches }
   }))
 
-  server.registerTool('minecraft_attack', {
+  registerTool('minecraft_attack', {
     title: 'Attack a Minecraft entity',
     description: 'Select the nearest matching entity and attack it one or more times, optionally pathfinding into range first.',
     inputSchema: {
@@ -238,7 +294,7 @@ export function createServer(client = new MinecraftClient()) {
     annotations: { destructiveHint: true, openWorldHint: true }
   }, async (input) => safe(() => client.runAction(() => client.attack(selector(input), input.count, input.intervalMs, input.approachRange))))
 
-  server.registerTool('minecraft_inventory', {
+  registerTool('minecraft_inventory', {
     title: 'Inspect or manipulate Minecraft inventory',
     description: 'List inventory/window slots, equip or toss an item, select a hotbar slot, click a window slot, move a stack between slots, or close the current window.',
     inputSchema: {
@@ -301,7 +357,7 @@ export function createServer(client = new MinecraftClient()) {
     return { closed: true }
   })))
 
-  server.registerTool('minecraft_open', {
+  registerTool('minecraft_open', {
     title: 'Open a Minecraft block or entity UI',
     description: 'Open a container block or activate an entity such as a villager, then return the resulting window slots when available.',
     inputSchema: {
@@ -311,7 +367,7 @@ export function createServer(client = new MinecraftClient()) {
     }
   }, async (input) => safe(() => client.runAction(() => client.openTarget(input.kind, input.target, selector(input)))))
 
-  server.registerTool('minecraft_block', {
+  registerTool('minecraft_block', {
     title: 'Interact with a Minecraft block',
     description: 'Inspect, activate, dig, or place the held block against a loaded block coordinate.',
     inputSchema: {
@@ -322,7 +378,7 @@ export function createServer(client = new MinecraftClient()) {
     annotations: { openWorldHint: true }
   }, async ({ action, target, face }) => safe(() => client.runAction(() => client.interactBlock(action, target, face))))
 
-  server.registerTool('minecraft_entity', {
+  registerTool('minecraft_entity', {
     title: 'Interact with a Minecraft entity',
     description: 'Inspect, activate, use the held item on, or mount the nearest matching entity; or dismount the current vehicle.',
     inputSchema: { action: z.enum(['inspect', 'activate', 'use_on', 'mount', 'dismount']), ...selectorShape },
@@ -335,7 +391,7 @@ export function createServer(client = new MinecraftClient()) {
     return client.interactEntity(input.action, selector(input))
   })))
 
-  server.registerTool('minecraft_use_item', {
+  registerTool('minecraft_use_item', {
     title: 'Use the held Minecraft item',
     description: 'Start or stop using the held item, consume food/potions to completion, or swing an arm.',
     inputSchema: {
@@ -351,14 +407,61 @@ export function createServer(client = new MinecraftClient()) {
     return { action, heldItem: bot.heldItem?.name ?? null, usingHeldItem: bot.usingHeldItem }
   })))
 
-  server.registerTool('minecraft_raw_packet', {
+  registerTool('minecraft_capture', {
+    title: 'Capture the nearby Minecraft world',
+    description: 'Create a top-down PNG capture of loaded blocks and entities around the client. The image is returned to the agent, persisted with the current session, and displayed in the dashboard.',
+    inputSchema: {
+      radius: z.number().int().min(4).max(32).default(16)
+    },
+    annotations: { readOnlyHint: true }
+  }, async ({ radius }) => {
+    try {
+      const captured = await client.runAction(async (bot) => captureWorldMap(bot, radius, activity.capturesDirectory))
+      const stored = activity.recordCapture({
+        filename: captured.filename,
+        mimeType: captured.mimeType,
+        width: captured.width,
+        height: captured.height,
+        radius: captured.radius,
+        center: captured.center,
+        size: captured.size
+      })
+      const metadata = {
+        ...stored,
+        dashboardUrl: dashboard.url ? `${dashboard.url}/captures/${encodeURIComponent(stored.filename)}` : null
+      }
+      return {
+        content: [
+          { type: 'image' as const, data: captured.buffer.toString('base64'), mimeType: captured.mimeType },
+          { type: 'text' as const, text: JSON.stringify(metadata, null, 2) }
+        ],
+        structuredContent: metadata
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { isError: true, content: [{ type: 'text' as const, text: message }] }
+    }
+  })
+
+  registerTool('minecraft_dashboard', {
+    title: 'Open the Minecraft session dashboard',
+    description: 'Start the local read-only dashboard if necessary and optionally open it in the default browser.',
+    inputSchema: { openBrowser: z.boolean().default(true) },
+    annotations: { readOnlyHint: true }
+  }, async ({ openBrowser }) => safe(async () => {
+    const url = await dashboard.start()
+    if (openBrowser) dashboard.open()
+    return { url, opened: openBrowser, ...counts(activity.snapshot()) }
+  }))
+
+  registerTool('minecraft_raw_packet', {
     title: 'Send a raw Minecraft protocol packet',
     description: 'Advanced escape hatch for a protocol packet name and payload. Disabled unless MINECRAFT_ALLOW_RAW_PACKETS=true. Invalid packets may disconnect or corrupt client state.',
     inputSchema: { name: z.string().min(1), data: z.record(z.string(), z.unknown()) },
     annotations: { destructiveHint: true, openWorldHint: true }
   }, async ({ name, data }) => safe(() => client.writeRawPacket(name, data)))
 
-  return { server, client }
+  return { server, client, dashboard, activity }
 }
 
 function selector(input: {
@@ -399,4 +502,12 @@ function normalizeObject(value: unknown): Record<string, unknown> {
 
 function resource(uri: string, value: unknown) {
   return { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(value, null, 2) }] }
+}
+
+function counts(snapshot: { sessions: unknown[], activities: unknown[], captures: unknown[] }) {
+  return {
+    sessionCount: snapshot.sessions.length,
+    activityCount: snapshot.activities.length,
+    captureCount: snapshot.captures.length
+  }
 }

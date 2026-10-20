@@ -21,7 +21,7 @@ describe('MCP server', () => {
     expect(tools.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
       'minecraft_connect', 'minecraft_chat', 'minecraft_move', 'minecraft_attack',
       'minecraft_inventory', 'minecraft_block', 'minecraft_entity', 'minecraft_world_snapshot',
-      'minecraft_raw_packet'
+      'minecraft_capture', 'minecraft_dashboard', 'minecraft_raw_packet'
     ]))
 
     const result = await mcpClient.callTool({ name: 'minecraft_status', arguments: {} })

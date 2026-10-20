@@ -27,6 +27,7 @@ export class EventBuffer {
   private readonly events: MinecraftEvent[] = []
   private nextSequence = 1
   private waiters = new Set<() => void>()
+  private listeners = new Set<(event: MinecraftEvent) => void>()
 
   constructor(private readonly capacity: number) {}
 
@@ -36,7 +37,13 @@ export class EventBuffer {
     if (this.events.length > this.capacity) this.events.splice(0, this.events.length - this.capacity)
     for (const wake of this.waiters) wake()
     this.waiters.clear()
+    for (const listener of this.listeners) listener(event)
     return event
+  }
+
+  subscribe(listener: (event: MinecraftEvent) => void) {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   latestSequence(): number {

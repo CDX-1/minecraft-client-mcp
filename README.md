@@ -4,6 +4,19 @@ A local [Model Context Protocol](https://modelcontextprotocol.io/) server that g
 
 It supports offline/no-auth and Microsoft device-code login, chat and slash commands, pathfinding and direct controls, combat, block/entity interaction, inventory and container UIs, event-driven chat/state reads, compact world snapshots, nearby block/entity queries, and an opt-in raw packet escape hatch.
 
+## Session dashboard
+
+The MCP process starts a read-only dashboard at `http://127.0.0.1:3210`. It shows:
+
+- Prior and current Minecraft connection sessions, including server, player, version, timestamps, and outcome.
+- MCP actions and Minecraft events as they happen over a live server-sent event stream.
+- Action inputs, results, failures, and execution duration.
+- PNG world captures associated with the session in which they were taken.
+
+History is retained across MCP restarts in `~/.minecraft-client-mcp/activity.jsonl`; captures are stored under `~/.minecraft-client-mcp/captures`. Call `minecraft_dashboard` to open the page in the default browser, or set `MINECRAFT_DASHBOARD_OPEN=true` to open it whenever the MCP process starts.
+
+The dashboard deliberately binds to localhost and has no write endpoints. Action history can contain chat messages, commands, usernames, and server addresses, so protect the dashboard data directory like any other local application history.
+
 ## Minecraft version compatibility
 
 - **26.1:** supported and included in Mineflayer's tested-version list.
@@ -108,9 +121,11 @@ Only one Minecraft session is managed by each MCP server process. Call `minecraf
 | `minecraft_world_snapshot` | Palette-compressed nearby blocks, entities, and bot state |
 | `minecraft_find_blocks` | Efficient nearest-block lookup by registry name |
 | `minecraft_entities` | Bounded and filtered entity query |
+| `minecraft_capture` | Save and return a top-down PNG world capture |
+| `minecraft_dashboard` | Return or open the live local session dashboard |
 | `minecraft_raw_packet` | Opt-in protocol-level packet write |
 
-Three MCP resources are also available: `minecraft://status`, `minecraft://versions`, and `minecraft://events/recent`.
+Four MCP resources are also available: `minecraft://status`, `minecraft://versions`, `minecraft://events/recent`, and `minecraft://dashboard`.
 
 ### Efficient world-state loop
 
@@ -121,7 +136,7 @@ For agent workflows, use this pattern:
 3. Use `minecraft_find_blocks` for goal-directed searches instead of requesting a large cube.
 4. Track the `latestSequence` returned by `minecraft_events`, and pass it back as `afterSequence` to read only deltas.
 
-The server intentionally uses structured state rather than a rendered screenshot. This is much smaller, deterministic, and directly actionable by an agent. A visual viewer can be added independently without changing the MCP surface.
+Structured snapshots remain the most token-efficient source for agent decisions. When visual context is useful, `minecraft_capture` creates a deterministic top-down PNG showing nearby terrain, entities, and the bot position; the result is returned to the agent and archived in the dashboard.
 
 ## Environment variables
 
@@ -133,6 +148,11 @@ The server intentionally uses structured state rather than a rendered screenshot
 | `MINECRAFT_MAX_SNAPSHOT_BLOCKS` | `5000` | Hard ceiling for blocks returned per snapshot |
 | `MINECRAFT_MAX_SNAPSHOT_ENTITIES` | `256` | Hard ceiling for entities returned per snapshot |
 | `MINECRAFT_ALLOW_RAW_PACKETS` | `false` | Enables `minecraft_raw_packet` when exactly `true` |
+| `MINECRAFT_DASHBOARD_ENABLED` | `true` | Start the dashboard alongside the MCP server |
+| `MINECRAFT_DASHBOARD_HOST` | `127.0.0.1` | Dashboard bind address |
+| `MINECRAFT_DASHBOARD_PORT` | `3210` | Preferred port; the next ten ports are tried if occupied |
+| `MINECRAFT_DASHBOARD_OPEN` | `false` | Open the dashboard in the default browser at startup |
+| `MINECRAFT_DASHBOARD_DATA_DIR` | `~/.minecraft-client-mcp` | Persistent journal and capture directory |
 
 ## Raw packet safety
 
@@ -146,7 +166,7 @@ npm test
 npm run test:stdio
 ```
 
-The automated suite validates the event cursor/long-poll behavior and performs an in-memory MCP handshake, tool discovery, and status call. Connecting to a real server is intentionally left as an environment-specific integration check.
+The automated suite validates event cursors, persistent session history, PNG capture encoding, dashboard HTTP security and state endpoints, plus in-memory and stdio MCP handshakes. Connecting to a real server is intentionally left as an environment-specific integration check.
 
 ## Scope and security
 
