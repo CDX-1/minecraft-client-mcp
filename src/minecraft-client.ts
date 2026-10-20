@@ -7,6 +7,7 @@ import { ActionQueue } from './action-queue.js'
 import { config } from './config.js'
 import { EventBuffer, type MinecraftEventType } from './events.js'
 import { block as serializeBlock, botStatus, entity as serializeEntity, item, position } from './serializers.js'
+import { inspectVersion } from './version-support.js'
 
 const { goals, Movements, pathfinder } = pathfinderModule
 
@@ -65,6 +66,12 @@ export class MinecraftClient {
 
   async connect(input: ConnectOptions) {
     if (this.connectionState !== 'disconnected') throw new Error(`Client is already ${this.connectionState}`)
+    if (input.version) {
+      const support = inspectVersion(input.version)
+      if (!support.supported) {
+        throw new Error(`Minecraft ${input.version} is not supported by the installed Mineflayer stack: ${support.reason}`)
+      }
+    }
     this.connectionState = 'connecting'
     this.lastDisconnectReason = null
     this.pendingMsaCode = null

@@ -4,6 +4,14 @@ A local [Model Context Protocol](https://modelcontextprotocol.io/) server that g
 
 It supports offline/no-auth and Microsoft device-code login, chat and slash commands, pathfinding and direct controls, combat, block/entity interaction, inventory and container UIs, event-driven chat/state reads, compact world snapshots, nearby block/entity queries, and an opt-in raw packet escape hatch.
 
+## Minecraft version compatibility
+
+- **26.1:** supported and included in Mineflayer's tested-version list.
+- **26.1.1 / 26.1.2:** supported through the shared 26.1 protocol and game-data mapping.
+- **26.2:** not yet safe to claim as supported. Its protocol number is registered, but the currently published Mineflayer stack does not include complete 26.2 game data or list it as a supported client version. The upstream 26.2 Mineflayer and protocol changes are still under review.
+
+Use `minecraft_versions` or read `minecraft://versions` to inspect compatibility at runtime. The server validates an explicitly requested version before connecting, and omitting `version` still enables normal server auto-detection. A 26.2 server can only be used today if it provides a compatible 26.1 endpoint, such as a correctly configured ViaVersion/ViaBackwards setup.
+
 ## Requirements
 
 - Node.js 22 or newer
@@ -86,6 +94,7 @@ Only one Minecraft session is managed by each MCP server process. Call `minecraf
 |---|---|
 | `minecraft_connect` / `minecraft_disconnect` | Session lifecycle and offline/Microsoft authentication |
 | `minecraft_status` | Connection, health, food, position, dimension, held item, and auth state |
+| `minecraft_versions` | Installed Mineflayer compatibility and modern-version probes |
 | `minecraft_events` | Cursor-based read/long-poll for chat, messages, combat, players, windows, and connection events |
 | `minecraft_chat` | Chat, whisper, and slash-command execution |
 | `minecraft_move` | A* pathfinding, dynamic following, low-level controls, and stop |
@@ -101,7 +110,7 @@ Only one Minecraft session is managed by each MCP server process. Call `minecraf
 | `minecraft_entities` | Bounded and filtered entity query |
 | `minecraft_raw_packet` | Opt-in protocol-level packet write |
 
-Two MCP resources are also available: `minecraft://status` and `minecraft://events/recent`.
+Three MCP resources are also available: `minecraft://status`, `minecraft://versions`, and `minecraft://events/recent`.
 
 ### Efficient world-state loop
 

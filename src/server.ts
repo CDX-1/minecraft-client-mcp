@@ -4,6 +4,7 @@ import type { ControlState, EquipmentDestination } from 'mineflayer'
 import { config } from './config.js'
 import { eventTypes, MinecraftClient, type EntitySelector } from './minecraft-client.js'
 import { entity as serializeEntity, position } from './serializers.js'
+import { versionCapabilities } from './version-support.js'
 
 const coordinates = z.object({
   x: z.number().describe('World X coordinate'),
@@ -38,6 +39,13 @@ export function createServer(client = new MinecraftClient()) {
       latestSequence: client.events.latestSequence(),
       events: client.events.read(Math.max(0, client.events.latestSequence() - 100), undefined, 100)
     })
+  )
+
+  server.registerResource(
+    'minecraft-versions',
+    'minecraft://versions',
+    { title: 'Minecraft version compatibility', description: 'Installed Mineflayer version support and compatibility probes for modern releases', mimeType: 'application/json' },
+    async () => resource('minecraft://versions', versionCapabilities())
   )
 
   server.registerTool('minecraft_connect', {
@@ -76,6 +84,13 @@ export function createServer(client = new MinecraftClient()) {
     inputSchema: {},
     annotations: { readOnlyHint: true }
   }, async () => safe(() => client.status()))
+
+  server.registerTool('minecraft_versions', {
+    title: 'Get Minecraft version compatibility',
+    description: 'Report the exact Minecraft versions tested by the installed Mineflayer stack and compatibility details for 26.1, 26.1.1, 26.1.2, and 26.2.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true }
+  }, async () => safe(() => versionCapabilities()))
 
   server.registerTool('minecraft_events', {
     title: 'Read or wait for Minecraft events',
