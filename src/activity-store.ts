@@ -6,6 +6,7 @@ export type ActivityStatus = 'started' | 'succeeded' | 'failed'
 
 export interface SessionRecord {
   id: string
+  processId: number | null
   host: string
   port: number
   username: string
@@ -72,6 +73,7 @@ export class ActivityStore {
   startSession(input: { host: string, port: number, username: string, auth: string, version?: string }): SessionRecord {
     const session: SessionRecord = {
       id: randomUUID(),
+      processId: process.pid,
       host: input.host,
       port: input.port,
       username: input.username,
@@ -166,6 +168,10 @@ export class ActivityStore {
   }
 
   snapshot() {
+    if (this.persist) {
+      this.syncFromJournal()
+      this.markStaleSessions()
+    }
     return {
       currentSessionId: this.currentSessionId,
       sessions: [...this.sessions.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
@@ -186,6 +192,12 @@ export class ActivityStore {
 
   private load() {
     if (!existsSync(this.journalPath)) return
+    this.syncFromJournal()
+    this.markStaleSessions()
+    this.trimActivities()
+  }
+
+  private syncFromJournal() {
     const lines = readFileSync(this.journalPath, 'utf8').split(/\r?\n/).filter(Boolean)
     for (const line of lines) {
       try {
@@ -195,13 +207,20 @@ export class ActivityStore {
         if (entry.type === 'capture') this.captures.set(entry.value.id, entry.value)
       } catch { /* Preserve valid entries around a partial final line. */ }
     }
-    const active = [...this.sessions.values()].find((session) => session.status === 'connected' || session.status === 'connecting')
-    if (active) {
-      const ended = { ...active, status: 'ended' as const, endedAt: now(), reason: 'MCP process exited' }
-      this.sessions.set(ended.id, ended)
-      appendFileSync(this.journalPath, `${JSON.stringify({ type: 'session', value: ended })}\n`, 'utf8')
-    }
     this.trimActivities()
+  }
+
+  private markStaleSessions() {
+    const stale = [...this.sessions.values()].filter((session) =>
+      (session.status === 'connected' || session.status === 'connecting') &&
+      session.processId !== process.pid &&
+      !isProcessAlive(session.processId)
+    )
+    for (const session of stale) {
+      const ended = { ...session, status: 'ended' as const, endedAt: now(), reason: 'MCP process exited' }
+      this.sessions.set(ended.id, ended)
+      this.commit({ type: 'session', value: ended })
+    }
   }
 
   private trimActivities() {
@@ -225,6 +244,16 @@ function sanitize(value: unknown): unknown {
     }))
   } catch {
     return String(value)
+  }
+}
+
+function isProcessAlive(processId: number | null | undefined) {
+  if (!processId || processId <= 0) return false
+  try {
+    process.kill(processId, 0)
+    return true
+  } catch {
+    return false
   }
 }
 

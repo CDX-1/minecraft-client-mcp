@@ -13,7 +13,7 @@ The MCP process starts a read-only dashboard at `http://127.0.0.1:3210`. It show
 - Action inputs, results, failures, and execution duration.
 - PNG world captures associated with the session in which they were taken.
 
-History is retained across MCP restarts in `~/.minecraft-client-mcp/activity.jsonl`; captures are stored under `~/.minecraft-client-mcp/captures`. Call `minecraft_dashboard` to open the page in the default browser, or set `MINECRAFT_DASHBOARD_OPEN=true` to open it whenever the MCP process starts.
+History is retained across MCP restarts in `~/.minecraft-client-mcp/activity.jsonl`; captures are stored under `~/.minecraft-client-mcp/captures`. Multiple MCP processes share and periodically reconcile this journal, so their current sessions appear together. Call `minecraft_dashboard` to open the page in the default browser, or set `MINECRAFT_DASHBOARD_OPEN=true` to open it whenever the MCP process starts.
 
 The dashboard deliberately binds to localhost and has no write endpoints. Action history can contain chat messages, commands, usernames, and server addresses, so protect the dashboard data directory like any other local application history.
 

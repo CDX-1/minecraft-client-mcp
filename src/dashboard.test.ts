@@ -48,7 +48,7 @@ describe('dashboard', () => {
     first.finishAction(action.id, 'succeeded', { connected: true }, null)
 
     const restored = new ActivityStore(directory, true).snapshot()
-    expect(restored.sessions[0]).toMatchObject({ id: session.id, status: 'ended', reason: 'MCP process exited' })
+    expect(restored.sessions[0]).toMatchObject({ id: session.id, status: 'connecting', processId: process.pid })
     expect(restored.activities[0]).toMatchObject({ id: action.id, status: 'succeeded' })
   })
 

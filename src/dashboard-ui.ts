@@ -190,5 +190,6 @@ function setOffline() { byId('stream-state').textContent='Reconnecting'; }
 byId('all-sessions').addEventListener('click',()=>{state.selectedSession=null;state.selectedActivity=null;render();});
 byId('clear-selection').addEventListener('click',()=>{state.selectedSession=null;state.selectedActivity=null;render();});
 const stream=new EventSource('/api/stream'); stream.onopen=()=>{byId('stream-state').textContent='Live';}; stream.onmessage=scheduleRefresh; stream.onerror=setOffline;
+setInterval(scheduleRefresh, 2000);
 refresh().catch(setOffline);
 `
