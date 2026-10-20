@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "minecraft": {
+      "command": "node",
+      "args": ["${CLAUDE_PROJECT_DIR}/dist/index.js"],
+      "env": {
+        "MINECRAFT_AUTH_CACHE": "${CLAUDE_PROJECT_DIR}/.minecraft-auth"
+      }
+    }
+  }
+}

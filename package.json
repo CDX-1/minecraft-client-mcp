@@ -1,0 +1,48 @@
+{
+  "name": "minecraft-client-mcp",
+  "version": "1.0.0",
+  "description": "An MCP server for agentic control of a Minecraft Java client through Mineflayer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CDX-1/minecraft-client-mcp.git"
+  },
+  "homepage": "https://github.com/CDX-1/minecraft-client-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/CDX-1/minecraft-client-mcp/issues"
+  },
+  "type": "module",
+  "bin": {
+    "minecraft-client-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:stdio": "node scripts/stdio-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "vec3": "^0.1.10",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.6"
+  }
+}
