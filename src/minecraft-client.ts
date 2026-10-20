@@ -416,6 +416,17 @@ export class MinecraftClient {
     bot.on('playerLeft', (player) => { this.events.push('player_left', { username: player.username, uuid: player.uuid }) })
     bot.on('windowOpen', (window) => { this.events.push('window_open', { id: window.id, type: window.type, title: window.title }) })
     bot.on('windowClose', (window) => { this.events.push('window_close', { id: window.id, type: window.type }) })
+    bot.on('resourcePack', (url, hash, uuid) => {
+      const acknowledgedBy = acknowledgeResourcePack(bot)
+      this.events.push('resource_pack', {
+        url,
+        hash: hash ?? null,
+        uuid: uuid ?? null,
+        clientState: bot._client.state,
+        responses: ['accepted', 'successfully_loaded'],
+        acknowledgedBy
+      })
+    })
     bot.on('kicked', (reason, loggedIn) => { this.events.push('kicked', { reason: String(reason), loggedIn }) })
     bot.on('error', (error) => { this.events.push('error', { message: error.message }) })
     bot.on('end', (reason) => {
@@ -431,8 +442,17 @@ export class MinecraftClient {
 
 export const eventTypes: MinecraftEventType[] = [
   'chat', 'message', 'login', 'spawn', 'end', 'kicked', 'error', 'death', 'health',
-  'entity_hurt', 'entity_dead', 'player_joined', 'player_left', 'window_open', 'window_close', 'msa_code'
+  'entity_hurt', 'entity_dead', 'player_joined', 'player_left', 'window_open', 'window_close', 'msa_code', 'resource_pack'
 ]
+
+export function acknowledgeResourcePack(bot: Pick<Bot, '_client' | 'acceptResourcePack'>) {
+  // Mineflayer 4.39+ acknowledges packs itself while configuration is held open.
+  // Calling it again there sends duplicate ACCEPTED/LOADED packets. Requests in
+  // login/play state need this MCP listener, including those received pre-spawn.
+  if (bot._client.state === 'configuration') return 'mineflayer_configuration_handler' as const
+  bot.acceptResourcePack()
+  return 'mcp_resource_pack_handler' as const
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

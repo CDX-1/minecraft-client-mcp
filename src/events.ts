@@ -15,6 +15,7 @@ export type MinecraftEventType =
   | 'window_open'
   | 'window_close'
   | 'msa_code'
+  | 'resource_pack'
 
 export interface MinecraftEvent {
   seq: number

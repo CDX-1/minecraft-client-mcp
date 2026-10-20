@@ -25,7 +25,7 @@ const selectorShape = {
 }
 
 export function createServer(providedClient?: MinecraftClient) {
-  const server = new McpServer({ name: 'minecraft-client-mcp', version: '1.1.0' })
+  const server = new McpServer({ name: 'minecraft-client-mcp', version: '1.1.1' })
   const client = providedClient ?? new MinecraftClient()
   const activity = new ActivityStore(config.dashboardDataDirectory)
   const dashboard = new DashboardServer(activity, {

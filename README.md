@@ -4,6 +4,8 @@ A local [Model Context Protocol](https://modelcontextprotocol.io/) server that g
 
 It supports offline/no-auth and Microsoft device-code login, chat and slash commands, pathfinding and direct controls, combat, block/entity interaction, inventory and container UIs, event-driven chat/state reads, compact world snapshots, nearby block/entity queries, and an opt-in raw packet escape hatch.
 
+Server resource-pack requests are acknowledged automatically with `ACCEPTED` followed by `SUCCESSFULLY_LOADED`, including requests received during configuration or before the bot spawns. Mineflayer handles configuration-phase packets; the MCP listener handles login/play-phase requests without sending duplicates. The bot reports success to the server but does not download or render the pack.
+
 ## Session dashboard
 
 The MCP process starts a read-only dashboard at `http://127.0.0.1:3210`. It shows:
