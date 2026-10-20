@@ -98,6 +98,7 @@ export class MinecraftClient {
 
     const bot = createBot(options)
     this.botInstance = bot
+    installResourcePackUuidFix(bot)
     bot.loadPlugin(pathfinder)
     this.attachListeners(bot)
 
@@ -417,11 +418,10 @@ export class MinecraftClient {
     bot.on('windowOpen', (window) => { this.events.push('window_open', { id: window.id, type: window.type, title: window.title }) })
     bot.on('windowClose', (window) => { this.events.push('window_close', { id: window.id, type: window.type }) })
     bot.on('resourcePack', (url, hash, uuid) => {
+      const pack = normalizeResourcePackEvent(url, hash, uuid)
       const acknowledgedBy = acknowledgeResourcePack(bot)
       this.events.push('resource_pack', {
-        url,
-        hash: hash ?? null,
-        uuid: uuid ?? null,
+        ...pack,
         clientState: bot._client.state,
         responses: ['accepted', 'successfully_loaded'],
         acknowledgedBy
@@ -452,6 +452,36 @@ export function acknowledgeResourcePack(bot: Pick<Bot, '_client' | 'acceptResour
   if (bot._client.state === 'configuration') return 'mineflayer_configuration_handler' as const
   bot.acceptResourcePack()
   return 'mcp_resource_pack_handler' as const
+}
+
+export function installResourcePackUuidFix(bot: Pick<Bot, '_client'>) {
+  const client = bot._client
+  const originalWrite = client.write.bind(client)
+
+  client.write = ((name: string, params: Record<string, unknown>) => {
+    if (name === 'resource_pack_receive' && params?.uuid != null && typeof params.uuid !== 'string') {
+      return originalWrite(name, { ...params, uuid: String(params.uuid) })
+    }
+    return originalWrite(name, params)
+  }) as typeof client.write
+}
+
+export function normalizeResourcePackEvent(url: unknown, hash?: unknown, uuid?: unknown) {
+  if (isUuidObject(hash)) {
+    return { url: String(url), hash: null, uuid: String(hash) }
+  }
+  if (isUuidObject(url) && typeof hash === 'string') {
+    return { url: hash, hash: null, uuid: String(url) }
+  }
+  return {
+    url: String(url),
+    hash: typeof hash === 'string' ? hash : null,
+    uuid: uuid == null ? null : String(uuid)
+  }
+}
+
+function isUuidObject(value: unknown): value is { toString(): string } {
+  return typeof value === 'object' && value !== null && String(value) !== '[object Object]'
 }
 
 function errorMessage(error: unknown): string {
